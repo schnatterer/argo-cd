@@ -17,10 +17,9 @@ import (
 func TestPullRequestGithubGenerateParams(t *testing.T) {
 	ctx := context.Background()
 	cases := []struct {
-		selectFunc     func(context.Context, *argoprojiov1alpha1.PullRequestGenerator, *argoprojiov1alpha1.ApplicationSet) (pullrequest.PullRequestService, error)
-		expected       []map[string]interface{}
-		expectedErr    error
-		applicationSet argoprojiov1alpha1.ApplicationSet
+		selectFunc  func(context.Context, *argoprojiov1alpha1.PullRequestGenerator, *argoprojiov1alpha1.ApplicationSet) (pullrequest.PullRequestService, error)
+		expected    []map[string]interface{}
+		expectedErr error
 	}{
 		{
 			selectFunc: func(context.Context, *argoprojiov1alpha1.PullRequestGenerator, *argoprojiov1alpha1.ApplicationSet) (pullrequest.PullRequestService, error) {
@@ -43,7 +42,6 @@ func TestPullRequestGithubGenerateParams(t *testing.T) {
 					"branch_slug":    "branch1",
 					"head_sha":       "089d92cbf9ff857a39e6feccd32798ca700fb958",
 					"head_short_sha": "089d92cb",
-					"head_short_sha_7": "089d92c",
 				},
 			},
 			expectedErr: nil,
@@ -69,7 +67,6 @@ func TestPullRequestGithubGenerateParams(t *testing.T) {
 					"branch_slug":    "feat-areally-long-pull-request-name-to-test-argo",
 					"head_sha":       "9b34ff5bd418e57d58891eb0aa0728043ca1e8be",
 					"head_short_sha": "9b34ff5b",
-					"head_short_sha_7": "9b34ff5",
 				},
 			},
 			expectedErr: nil,
@@ -95,7 +92,6 @@ func TestPullRequestGithubGenerateParams(t *testing.T) {
 					"branch_slug":    "a-very-short-sha",
 					"head_sha":       "abcd",
 					"head_short_sha": "abcd",
-					"head_short_sha_7": "abcd",
 				},
 			},
 			expectedErr: nil,
@@ -111,73 +107,6 @@ func TestPullRequestGithubGenerateParams(t *testing.T) {
 			expected:    nil,
 			expectedErr: fmt.Errorf("error listing repos: fake error"),
 		},
-		{
-			selectFunc: func(context.Context, *argoprojiov1alpha1.PullRequestGenerator, *argoprojiov1alpha1.ApplicationSet) (pullrequest.PullRequestService, error) {
-				return pullrequest.NewFakeService(
-					ctx,
-					[]*pullrequest.PullRequest{
-						&pullrequest.PullRequest{
-							Number:  1,
-							Branch:  "branch1",
-							HeadSHA: "089d92cbf9ff857a39e6feccd32798ca700fb958",
-							Labels:  []string{"preview"},
-						},
-					},
-					nil,
-				)
-			},
-			expected: []map[string]interface{}{
-				{
-					"number":         "1",
-					"branch":         "branch1",
-					"branch_slug":    "branch1",
-					"head_sha":       "089d92cbf9ff857a39e6feccd32798ca700fb958",
-					"head_short_sha": "089d92cb",
-					"head_short_sha_7": "089d92c",
-					"labels":         []string{"preview"},
-				},
-			},
-			expectedErr: nil,
-			applicationSet: argoprojiov1alpha1.ApplicationSet{
-				Spec: argoprojiov1alpha1.ApplicationSetSpec{
-					// Application set is using Go Template.
-					GoTemplate: true,
-				},
-			},
-		},
-		{
-			selectFunc: func(context.Context, *argoprojiov1alpha1.PullRequestGenerator, *argoprojiov1alpha1.ApplicationSet) (pullrequest.PullRequestService, error) {
-				return pullrequest.NewFakeService(
-					ctx,
-					[]*pullrequest.PullRequest{
-						&pullrequest.PullRequest{
-							Number:  1,
-							Branch:  "branch1",
-							HeadSHA: "089d92cbf9ff857a39e6feccd32798ca700fb958",
-							Labels:  []string{"preview"},
-						},
-					},
-					nil,
-				)
-			},
-			expected: []map[string]interface{}{
-				{
-					"number":         "1",
-					"branch":         "branch1",
-					"branch_slug":    "branch1",
-					"head_sha":       "089d92cbf9ff857a39e6feccd32798ca700fb958",
-					"head_short_sha": "089d92cb",
-					"head_short_sha_7": "089d92c",
-				},
-			},
-			expectedErr: nil,
-			applicationSet: argoprojiov1alpha1.ApplicationSet{
-				Spec: argoprojiov1alpha1.ApplicationSetSpec{
-					// Application set is using fasttemplate.
-					GoTemplate: false,
-				},
-			},
-		},
 	}
 
 	for _, c := range cases {
@@ -188,7 +117,7 @@ func TestPullRequestGithubGenerateParams(t *testing.T) {
 			PullRequest: &argoprojiov1alpha1.PullRequestGenerator{},
 		}
 
-		got, gotErr := gen.GenerateParams(&generatorConfig, &c.applicationSet)
+		got, gotErr := gen.GenerateParams(&generatorConfig, nil)
 		assert.Equal(t, c.expectedErr, gotErr)
 		assert.ElementsMatch(t, c.expected, got)
 	}
