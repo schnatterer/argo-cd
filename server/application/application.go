@@ -57,8 +57,6 @@ import (
 	"github.com/argoproj/argo-cd/v2/util/security"
 	"github.com/argoproj/argo-cd/v2/util/session"
 	"github.com/argoproj/argo-cd/v2/util/settings"
-
-	applicationType "github.com/argoproj/argo-cd/v2/pkg/apis/application"
 )
 
 type AppResourceTreeFn func(ctx context.Context, app *appv1.Application) (*appv1.ApplicationTree, error)
@@ -207,21 +205,8 @@ func (s *Server) List(ctx context.Context, q *application.ApplicationQuery) (*ap
 	if err != nil {
 		return nil, fmt.Errorf("error listing apps with selectors: %w", err)
 	}
-
-	filteredApps := apps
-	// Filter applications by name
-	if q.Name != nil {
-		filteredApps = argoutil.FilterByNameP(filteredApps, *q.Name)
-	}
-
-	// Filter applications by projects
-	filteredApps = argoutil.FilterByProjectsP(filteredApps, getProjectsFromApplicationQuery(*q))
-
-	// Filter applications by source repo URL
-	filteredApps = argoutil.FilterByRepoP(filteredApps, q.GetRepo())
-
 	newItems := make([]appv1.Application, 0)
-	for _, a := range filteredApps {
+	for _, a := range apps {
 		// Skip any application that is neither in the control plane's namespace
 		// nor in the list of enabled namespaces.
 		if a.Namespace != s.ns && !glob.MatchStringInList(s.enabledNamespaces, a.Namespace, false) {
@@ -231,6 +216,19 @@ func (s *Server) List(ctx context.Context, q *application.ApplicationQuery) (*ap
 			newItems = append(newItems, *a)
 		}
 	}
+
+	if q.Name != nil {
+		newItems, err = argoutil.FilterByName(newItems, *q.Name)
+		if err != nil {
+			return nil, fmt.Errorf("error filtering applications by name: %w", err)
+		}
+	}
+
+	// Filter applications by projects
+	newItems = argoutil.FilterByProjects(newItems, getProjectsFromApplicationQuery(*q))
+
+	// Filter applications by source repo URL
+	newItems = argoutil.FilterByRepo(newItems, q.GetRepo())
 
 	// Sort found applications by name
 	sort.Slice(newItems, func(i, j int) bool {
@@ -1366,36 +1364,6 @@ func (s *Server) RevisionMetadata(ctx context.Context, q *application.RevisionMe
 	})
 }
 
-// RevisionChartDetails returns the helm chart metadata, as fetched from the reposerver
-func (s *Server) RevisionChartDetails(ctx context.Context, q *application.RevisionMetadataQuery) (*appv1.ChartDetails, error) {
-	appName := q.GetName()
-	appNs := s.appNamespaceOrDefault(q.GetAppNamespace())
-	a, err := s.appLister.Applications(appNs).Get(appName)
-	if err != nil {
-		return nil, fmt.Errorf("error getting app by name: %w", err)
-	}
-	if err := s.enf.EnforceErr(ctx.Value("claims"), rbacpolicy.ResourceApplications, rbacpolicy.ActionGet, a.RBACName(s.ns)); err != nil {
-		return nil, fmt.Errorf("error enforcing claims: %w", err)
-	}
-	if a.Spec.Source.Chart == "" {
-		return nil, fmt.Errorf("no chart found for application: %v", appName)
-	}
-	repo, err := s.db.GetRepository(ctx, a.Spec.Source.RepoURL)
-	if err != nil {
-		return nil, fmt.Errorf("error getting repository by URL: %w", err)
-	}
-	conn, repoClient, err := s.repoClientset.NewRepoServerClient()
-	if err != nil {
-		return nil, fmt.Errorf("error creating repo server client: %w", err)
-	}
-	defer ioutil.Close(conn)
-	return repoClient.GetRevisionChartDetails(ctx, &apiclient.RepoServerRevisionChartDetailsRequest{
-		Repo:     repo,
-		Name:     a.Spec.Source.Chart,
-		Revision: q.GetRevision(),
-	})
-}
-
 func isMatchingResource(q *application.ResourcesQuery, key kube.ResourceKey) bool {
 	return (q.GetName() == "" || q.GetName() == key.Name) &&
 		(q.GetNamespace() == "" || q.GetNamespace() == key.Namespace) &&
@@ -1836,14 +1804,7 @@ func (s *Server) ListLinks(ctx context.Context, req *application.ListAppLinksReq
 		return nil, fmt.Errorf("failed to read application deep links from configmap: %w", err)
 	}
 
-	clstObj, _, err := s.getObjectsForDeepLinks(ctx, a)
-	if err != nil {
-		return nil, err
-	}
-
-	deepLinksObject := deeplinks.CreateDeepLinksObject(nil, obj, clstObj, nil)
-
-	finalList, errorList := deeplinks.EvaluateDeepLinksResponse(deepLinksObject, obj.GetName(), deepLinks)
+	finalList, errorList := deeplinks.EvaluateDeepLinksResponse(*obj, deepLinks)
 	if len(errorList) > 0 {
 		log.Errorf("errorList while evaluating application deep links, %v", strings.Join(errorList, ", "))
 	}
@@ -1851,81 +1812,18 @@ func (s *Server) ListLinks(ctx context.Context, req *application.ListAppLinksReq
 	return finalList, nil
 }
 
-func (s *Server) getObjectsForDeepLinks(ctx context.Context, app *appv1.Application) (cluster *unstructured.Unstructured, project *unstructured.Unstructured, err error) {
-	proj, err := argo.GetAppProject(app, applisters.NewAppProjectLister(s.projInformer.GetIndexer()), s.ns, s.settingsMgr, s.db, ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error getting app project: %w", err)
-	}
-
-	// sanitize project jwt tokens
-	proj.Status = appv1.AppProjectStatus{}
-
-	project, err = kube.ToUnstructured(proj)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	getProjectClusters := func(project string) ([]*appv1.Cluster, error) {
-		return s.db.GetProjectClusters(ctx, project)
-	}
-
-	permitted, err := proj.IsDestinationPermitted(app.Spec.Destination, getProjectClusters)
-	if err != nil {
-		return nil, nil, err
-	}
-	if !permitted {
-		return nil, nil, fmt.Errorf("error getting destination cluster")
-	}
-
-	if err := argo.ValidateDestination(ctx, &app.Spec.Destination, s.db); err != nil {
-		log.WithFields(map[string]interface{}{
-			"application": app.GetName(),
-			"ns":          app.GetNamespace(),
-			"destination": app.Spec.Destination,
-		}).Warnf("cannot validate cluster, error=%v", err.Error())
-		return nil, nil, nil
-	}
-	clst, err := s.db.GetCluster(ctx, app.Spec.Destination.Server)
-	if err != nil {
-		log.WithFields(map[string]interface{}{
-			"application": app.GetName(),
-			"ns":          app.GetNamespace(),
-			"destination": app.Spec.Destination,
-		}).Warnf("cannot get cluster from db, error=%v", err.Error())
-		return nil, nil, nil
-	}
-	// sanitize cluster, remove cluster config creds and other unwanted fields
-	cluster, err = deeplinks.SanitizeCluster(clst)
-	return cluster, project, err
-}
-
 func (s *Server) ListResourceLinks(ctx context.Context, req *application.ApplicationResourceRequest) (*application.LinksResponse, error) {
-	obj, _, app, _, err := s.getUnstructuredLiveResourceOrApp(ctx, rbacpolicy.ActionGet, req)
+	obj, _, _, _, err := s.getUnstructuredLiveResourceOrApp(ctx, rbacpolicy.ActionGet, req)
 	if err != nil {
 		return nil, err
 	}
+
 	deepLinks, err := s.settingsMgr.GetDeepLinks(settings.ResourceDeepLinks)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read application deep links from configmap: %w", err)
 	}
 
-	obj, err = replaceSecretValues(obj)
-	if err != nil {
-		return nil, fmt.Errorf("error replacing secret values: %w", err)
-	}
-
-	appObj, err := kube.ToUnstructured(app)
-	if err != nil {
-		return nil, err
-	}
-
-	clstObj, projObj, err := s.getObjectsForDeepLinks(ctx, app)
-	if err != nil {
-		return nil, err
-	}
-
-	deepLinksObject := deeplinks.CreateDeepLinksObject(obj, appObj, clstObj, projObj)
-	finalList, errorList := deeplinks.EvaluateDeepLinksResponse(deepLinksObject, obj.GetName(), deepLinks)
+	finalList, errorList := deeplinks.EvaluateDeepLinksResponse(*obj, deepLinks)
 	if len(errorList) > 0 {
 		log.Errorf("errors while evaluating resource deep links, %v", strings.Join(errorList, ", "))
 	}
@@ -2011,7 +1909,7 @@ func (s *Server) logAppEvent(a *appv1.Application, ctx context.Context, reason s
 		user = "Unknown user"
 	}
 	message := fmt.Sprintf("%s %s", user, action)
-	s.auditLogger.LogAppEvent(a, eventInfo, message, user)
+	s.auditLogger.LogAppEvent(a, eventInfo, message)
 }
 
 func (s *Server) logResourceEvent(res *appv1.ResourceNode, ctx context.Context, reason string, action string) {
@@ -2021,7 +1919,7 @@ func (s *Server) logResourceEvent(res *appv1.ResourceNode, ctx context.Context, 
 		user = "Unknown user"
 	}
 	message := fmt.Sprintf("%s %s", user, action)
-	s.auditLogger.LogResourceEvent(res, eventInfo, message, user)
+	s.auditLogger.LogResourceEvent(res, eventInfo, message)
 }
 
 func (s *Server) ListResourceActions(ctx context.Context, q *application.ApplicationResourceRequest) (*application.ResourceActionsListResponse, error) {
@@ -2047,7 +1945,7 @@ func (s *Server) ListResourceActions(ctx context.Context, q *application.Applica
 }
 
 func (s *Server) getUnstructuredLiveResourceOrApp(ctx context.Context, rbacRequest string, q *application.ApplicationResourceRequest) (obj *unstructured.Unstructured, res *appv1.ResourceNode, app *appv1.Application, config *rest.Config, err error) {
-	if q.GetKind() == applicationType.ApplicationKind && q.GetGroup() == applicationType.Group && q.GetName() == q.GetResourceName() {
+	if q.GetKind() == "Application" && q.GetGroup() == "argoproj.io" && q.GetName() == q.GetResourceName() {
 		app, err = s.getApplicationEnforceRBACInformer(ctx, rbacRequest, q.GetAppNamespace(), q.GetName())
 		if err != nil {
 			return nil, nil, nil, nil, err

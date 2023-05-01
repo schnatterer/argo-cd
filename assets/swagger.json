@@ -1502,51 +1502,6 @@
         }
       }
     },
-    "/api/v1/applications/{name}/revisions/{revision}/chartdetails": {
-      "get": {
-        "tags": [
-          "ApplicationService"
-        ],
-        "summary": "Get the chart metadata (description, maintainers, home) for a specific revision of the application",
-        "operationId": "ApplicationService_RevisionChartDetails",
-        "parameters": [
-          {
-            "type": "string",
-            "description": "the application's name",
-            "name": "name",
-            "in": "path",
-            "required": true
-          },
-          {
-            "type": "string",
-            "description": "the revision of the app",
-            "name": "revision",
-            "in": "path",
-            "required": true
-          },
-          {
-            "type": "string",
-            "description": "the application's namespace.",
-            "name": "appNamespace",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1alpha1ChartDetails"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/runtimeError"
-            }
-          }
-        }
-      }
-    },
     "/api/v1/applications/{name}/revisions/{revision}/metadata": {
       "get": {
         "tags": [
@@ -5750,17 +5705,6 @@
         }
       }
     },
-    "v1alpha1ApplicationPreservedFields": {
-      "type": "object",
-      "properties": {
-        "annotations": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      }
-    },
     "v1alpha1ApplicationSet": {
       "type": "object",
       "title": "ApplicationSet is a set of Application resources\n+genclient\n+genclient:noStatus\n+k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object\n+kubebuilder:resource:path=applicationsets,shortName=appset;appsets\n+kubebuilder:subresource:status",
@@ -5944,9 +5888,6 @@
         },
         "goTemplate": {
           "type": "boolean"
-        },
-        "preservedFields": {
-          "$ref": "#/definitions/v1alpha1ApplicationPreservedFields"
         },
         "strategy": {
           "$ref": "#/definitions/v1alpha1ApplicationSetStrategy"
@@ -6190,10 +6131,6 @@
             "type": "string"
           }
         },
-        "commonAnnotationsEnvsubst": {
-          "type": "boolean",
-          "title": "CommonAnnotationsEnvsubst specifies whether to apply env variables substitution for annotation values"
-        },
         "commonLabels": {
           "type": "object",
           "title": "CommonLabels is a list of additional labels to add to rendered manifests",
@@ -6223,17 +6160,6 @@
         "nameSuffix": {
           "type": "string",
           "title": "NameSuffix is a suffix appended to resources for Kustomize apps"
-        },
-        "namespace": {
-          "type": "string",
-          "title": "Namespace sets the namespace that Kustomize adds to all resources"
-        },
-        "replicas": {
-          "type": "array",
-          "title": "Replicas is a list of Kustomize Replicas override specifications",
-          "items": {
-            "$ref": "#/definitions/v1alpha1KustomizeReplica"
-          }
         },
         "version": {
           "type": "string",
@@ -6482,26 +6408,6 @@
         "username": {
           "type": "string",
           "title": "Username for Basic auth"
-        }
-      }
-    },
-    "v1alpha1ChartDetails": {
-      "type": "object",
-      "title": "ChartDetails contains helm chart metadata for a specific version",
-      "properties": {
-        "description": {
-          "type": "string"
-        },
-        "home": {
-          "type": "string",
-          "title": "The URL of this projects home page, e.g. \"http://example.com\""
-        },
-        "maintainers": {
-          "type": "array",
-          "title": "List of maintainer details, name and email, e.g. [\"John Doe <john_doe@my-company.com>\"]",
-          "items": {
-            "type": "string"
-          }
         }
       }
     },
@@ -7087,18 +6993,6 @@
         }
       }
     },
-    "v1alpha1KustomizeReplica": {
-      "type": "object",
-      "properties": {
-        "count": {
-          "$ref": "#/definitions/intstrIntOrString"
-        },
-        "name": {
-          "type": "string",
-          "title": "Name of Deployment or StatefulSet"
-        }
-      }
-    },
     "v1alpha1ListGenerator": {
       "type": "object",
       "title": "ListGenerator include items info",
@@ -7108,9 +7002,6 @@
           "items": {
             "$ref": "#/definitions/v1JSON"
           }
-        },
-        "elementsYaml": {
-          "type": "string"
         },
         "template": {
           "$ref": "#/definitions/v1alpha1ApplicationSetTemplate"
@@ -8651,9 +8542,6 @@
           "type": "string"
         },
         "Compiler": {
-          "type": "string"
-        },
-        "ExtraBuildInfo": {
           "type": "string"
         },
         "GitCommit": {

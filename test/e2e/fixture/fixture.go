@@ -650,19 +650,6 @@ func EnsureCleanState(t *testing.T) {
 	log.WithFields(log.Fields{"duration": time.Since(start), "name": t.Name(), "id": id, "username": "admin", "password": "password"}).Info("clean state")
 }
 
-func RunCliWithRetry(maxRetries int, args ...string) (string, error) {
-	var out string
-	var err error
-	for i := 0; i < maxRetries; i++ {
-		out, err = RunCli(args...)
-		if err == nil {
-			break
-		}
-		time.Sleep(time.Second)
-	}
-	return out, err
-}
-
 func RunCli(args ...string) (string, error) {
 	return RunCliWithStdin("", args...)
 }
@@ -757,26 +744,6 @@ func AddSignedFile(path, contents string) {
 	os.Setenv("GNUPGHOME", prevGnuPGHome)
 	if IsRemote() {
 		FailOnErr(Run(repoDirectory(), "git", "push", "-f", "origin", "master"))
-	}
-}
-
-func AddSignedTag(name string) {
-	prevGnuPGHome := os.Getenv("GNUPGHOME")
-	os.Setenv("GNUPGHOME", TmpDir+"/gpg")
-	defer os.Setenv("GNUPGHOME", prevGnuPGHome)
-	FailOnErr(Run(repoDirectory(), "git", "-c", fmt.Sprintf("user.signingkey=%s", GpgGoodKeyID), "tag", "-sm", "add signed tag", name))
-	if IsRemote() {
-		FailOnErr(Run(repoDirectory(), "git", "push", "--tags", "-f", "origin", "master"))
-	}
-}
-
-func AddTag(name string) {
-	prevGnuPGHome := os.Getenv("GNUPGHOME")
-	os.Setenv("GNUPGHOME", TmpDir+"/gpg")
-	defer os.Setenv("GNUPGHOME", prevGnuPGHome)
-	FailOnErr(Run(repoDirectory(), "git", "tag", name))
-	if IsRemote() {
-		FailOnErr(Run(repoDirectory(), "git", "push", "--tags", "-f", "origin", "master"))
 	}
 }
 
