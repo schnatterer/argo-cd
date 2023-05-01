@@ -2,6 +2,7 @@ package helm
 
 import (
 	"fmt"
+	"io/ioutil"
 	"net/url"
 	"os"
 	"os/exec"
@@ -14,11 +15,6 @@ import (
 	"github.com/argoproj/argo-cd/v2/util/config"
 	executil "github.com/argoproj/argo-cd/v2/util/exec"
 	pathutil "github.com/argoproj/argo-cd/v2/util/io/path"
-)
-
-const (
-	ResourcePolicyAnnotation = "helm.sh/resource-policy"
-	ResourcePolicyKeep       = "keep"
 )
 
 type HelmRepository struct {
@@ -157,7 +153,7 @@ func (h *helm) GetParameters(valuesFiles []pathutil.ResolvedFilePath, appPath, r
 			if _, err := os.Stat(file); os.IsNotExist(err) {
 				continue
 			}
-			fileValues, err = os.ReadFile(file)
+			fileValues, err = ioutil.ReadFile(file)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("failed to read value file %s: %s", file, err)
